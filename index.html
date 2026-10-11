@@ -43,7 +43,7 @@ const PASS = "root";     // passphrase the numbers were sealed with
 // ---- THE SEALED NUMBERS -------------------------------------------------------
 // The digits and their sizes are NOT written in this file; they are sealed here and only
 // drawn onto the picture. Their positions are scattered by the script below.
-const SEAL = "ER8B5gRDUavxJ/FI7mJbFFCrbDQRIXQjJga24psWXEkOrLPMoiereAVqJSBccL+2n+I3KBwVj1zgJadaLzWkQ0mttniAEqxSpxeB+36CNALOdYnpAW/PJO5m4GBcquqYcmHaQRYKVIP37xew9MNO8jBsppt8cCL3s+VzfF/U8voSKiPuuYVOuc9nJbz/3obd63rvPPBenw/hpVQ5VH/sw9aNTEC+Cd0ZhVo3dGABIHZonVkPQMvhS6PRbrWTgun6v/++e8N0jCffmLxAueAJVB+8yVFyo1J3z5DxE/pqlxE+crmq2ZYPA/7RAde5xNcJF0T3vpF6rIiM8JqOPgf6wJ2LGCDIPvgA/6bVCJq+CoQj16SiEEPJQ9fcIjkiJKTGRToN1VG7upRAicoMQl43pPJFBuy9fXvhuItaZ12+qGOQ9KPwV2f8QJr8cTyoJGFUORuMYYJy+RQhdLQsaF8IF9X+R8KkR/qzRm5cafJC6Goe9KduI4fDoONWeUKIPI+2zTzY/P6ShOLQ+WViX3z3XahAE+Tj6tfMaAKArQFV/90BrhDMzA==";
+const SEAL = "ER8B5gRDUavxJ/FI7mJbFFCrbDQRIXQjJga24psWXEkOrLPMoiereAVqJSBccL+2n+I3KBwVjVzgJadaLzWkQ0mttniAEqxSpxeB+36CNALLdYnpAW/PJO5m4GBcquqYcmHaQRYKVIP37hKw9MNO8jBsppt8cCL3s+VzfF/U8voSKiPuuYVOuc9nJbz/3obd63rvPPBenw/hpVQ5VH/sw9aNTEC+Cd0ZhVo3dGABIHZonVkPQMvhSqbRbrWTgun6v/++e8N0jCffmLxAueAJVB+8xlFyo1J3z5DxE/pqlxE+crmq2ZYPA/7RAde5xNcJF0T3vpF6rIiM8JqOPgf6wJ2LGCDIPvYA/6bVCJq+CoQj16SiEEPJQ9fcIjkiJKTGRzoN1VG7upRAicoMQl43pPJFBuy9fXvhuItVZ12+qGOQ9KPwV2f8QJr8cTyoJGFUORuMYY9y+RQhdLQsaF8IF9X+R8KkR/qzRm5cafJC5Woe9KduI4fDoONWeUKIPI+2zTzY/P6ShOLV+WViX3z3XahAE+Tj6tfMaAKArQFV/90Brh7MzA==";
 // ---------------------------------------------------------------------------
 
 // small helpers for the lock
@@ -126,8 +126,8 @@ let CRITTERS = [];
 let LIGHT = RADIUS;                      // the light's size; it shrinks a little only on very small screens
 const CRITTER_KINDS = ["bat", "ghost", "bat", "ghost", "bat", "ghost"];   // how many and which: edit this list
 function layout() {
-  let FLOOR = RADIUS + 38;
-  const m = 54, n = ITEMS.length, rnd = rng(LAYOUT_SEED);
+  let FLOOR = RADIUS + 42;
+  const m = 44, n = ITEMS.length, rnd = rng(LAYOUT_SEED);
   let gap = 175, pts = [];
   function honeycomb(g) {
     const out = [], rowH = g * 0.866;
@@ -139,7 +139,7 @@ function layout() {
   LIGHT = RADIUS;
   if (pts.length < n) { gap = FLOOR; pts = honeycomb(FLOOR); }
   while (pts.length < n && LIGHT > 56) {          // tiny screen: make the light a little smaller so everything still fits
-    LIGHT -= 3; FLOOR = LIGHT + 38; gap = FLOOR; pts = honeycomb(FLOOR);
+    LIGHT -= 3; FLOOR = LIGHT + 42; gap = FLOOR; pts = honeycomb(FLOOR);
   }
   for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
   const use = pts.slice(0, n).map(function (p) { return { x: p.x, y: p.y }; });
@@ -147,8 +147,9 @@ function layout() {
   const jittered = use.map(function (p) { return { x: p.x + (rnd() * 2 - 1) * jit, y: p.y + (rnd() * 2 - 1) * jit }; });
   const fine = jittered.every(function (a, i) { return jittered.every(function (c, k) { return k <= i || Math.hypot(a.x - c.x, a.y - c.y) >= FLOOR; }); });
   const final = fine ? jittered : use;
+  ITEMS.forEach(function (it) { if (!it.px0) it.px0 = it.px; it.px = Math.round(26 + (it.px0 - 26) * (LIGHT / RADIUS)); });
   ITEMS.forEach(function (it, i) {
-    const q = final[i % final.length], pad = it.px * 0.5 + 8;
+    const q = final[i % final.length], pad = it.px * 0.5 + 6;
     it.X = Math.min(W - pad, Math.max(pad, q.x)); it.Y = Math.min(H - pad, Math.max(pad, q.y));
   });
 
