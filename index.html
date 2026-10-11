@@ -21,11 +21,13 @@
     border: 3px solid #ff7a14; border-radius: 22px; pointer-events: none;
     box-shadow: 0 0 24px rgba(255,122,20,0.55), inset 0 0 22px rgba(125,255,58,0.18);
   }
+  #veil { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; pointer-events: none; }
   #view { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; pointer-events: none; }
 </style>
 </head>
 <body>
 
+<canvas id="veil"></canvas>
 <canvas id="view"></canvas>
 <div id="frame"></div>
 
@@ -41,7 +43,7 @@ const PASS = "root";     // passphrase the numbers were sealed with
 // ---- THE SEALED NUMBERS -------------------------------------------------------
 // The digits and their sizes are NOT written in this file; they are sealed here and only
 // drawn onto the picture. Their positions are scattered by the script below.
-const SEAL = "ER8B5gRDUavxJ/FI7mJbFFCrbDQRIXQjJga2758WXEkOrLPMoi+reAVqJSBceL+2n+I3KBwWjVzgJadaLzWkQEmttniAEqxapxeB+36CNAbFdYnpAW/PJO5v4GBcquqYcmHaQRYKVIP34xKw9MNO8jBspp18cCL3s+VzfF/U8voSKiPjuYVOuc9nJbz/vYbd63rvPPBWnw/hpVQ5VHPhw9aNTEC+Cd0dhVo3dGABIH5onVkPQMvhTKPRbrWTgun6v/++e8N0jCffkLxAueAJVB+5y1Fyo1J3z5DxavpqlxE+crmi2ZYPA/7RAdiyxNcJF0T3vpF1rIiM8JqOPg/6wJ2LGCDIO/EA/6bVCJq+CoAj16SiEEPJS9fcIjkiJKTJRDoN1VG7upRAjsoMQl43pPJFBuy9fXvhuI1VZ12+qGOQ9KP1V2f8QJr8cTSoJGFUORuMZo5y+RQhdLQsaFkIF9X+R8KkR/qzRm5cafJB72oe9KduI4fDpeNWeUKIPI++zTzY/P6ShOfU+RQ=";
+const SEAL = "ER8B5gRDUavxJ/FI7mJbFFCrbDQRIXQjJga2758WXEkOrLPMoiqreAVqJSBccL+2n+I3KBwUjVzgJadaLzWkQkmttniAEqxSpxeB+36CNADIdYnpAW/PJO4I4GBcquqYcmHaQRYKVIP34xqw9MNO8jBspp18cCL3s+VzfF/U8voSKiPjsYVOuc9nJbz/vobd63rvPPBenw/hpVQ5VHHhw9aNTEC+Cd1jhVo3dGABIHZonVkPQMvhR67RbrWTgun6v/++e8N0jCffkLxAueAJVB+4zVFyo1J3z5DxbfpqlxE+crmi2ZYPA/7RAdy0xNcJF0T3vpF8rIiM8JqOPgf6wJ2LGCDIOfAA/6bVCJq+CoAj16SiEEPJS9fcIjkiJKTJRDoN1VG7upRAh8oMQl43pPJNBuy9fXvhuI9cZ12+qGOQ9KPwV2f8QJr8cTyoJGFUORuMbIZy+RQhdLQsaFkIF9X+R8KkR/qzRm5cafJF5Goe9KduI4fDpeNWeUKIPI++zTzY/P6ShOfU+WViX3z3XahPE+Tj6tfMaAqArQFV/90BrhDMvRLjQZwhrFUiRhHDiEMJrgWta8psmaf/YG8G";
 // ---------------------------------------------------------------------------
 
 // small helpers for the lock
@@ -96,6 +98,10 @@ try { const parsed = JSON.parse(openSeal(SEAL, "glow|" + PASS)); if (Array.isArr
 
 const view = document.getElementById("view");
 const vctx = view.getContext("2d");
+const veil = document.getElementById("veil");      // the black veil with the glowing bats and ghosts
+const veilCtx = veil.getContext("2d");
+const crit = document.createElement("canvas");     // the bats and ghosts, drawn once
+const cctx = crit.getContext("2d");
 const lit = document.createElement("canvas");      // all the numbers; lives only in memory
 const scratch = document.createElement("canvas");  // where the picture is cut to the circle of light
 const lctx = lit.getContext("2d");
@@ -103,7 +109,7 @@ const sctx = scratch.getContext("2d");
 
 let W = 0, H = 0, dpr = 1;
 let tx = -999, ty = -999, x = -999, y = -999;
-let r = 0, targetR = 0, wasLit = false;
+let r = 0, targetR = 0, wasLit = false, lastR = 1;
 
 function rng(a) {                       // small seeded random generator, so the scatter is repeatable
   return function () {
@@ -114,14 +120,14 @@ function rng(a) {                       // small seeded random generator, so the
   };
 }
 
-// Scatter everything across the page. Items sit on a loose, jittered honeycomb so no two are
-// closer than FLOOR pixels: the light then shows only one number at a time. The numbers
-// take their places first; spare places get the Halloween decorations.
-const DECO_KINDS = ["pumpkin", "bat", "ghost", "bat", "pumpkin", "ghost"];   // how many and which: edit this list
-let DECOS = [];
+// Scatter the numbers across the page. They sit on a loose, jittered honeycomb so no two are
+// closer than FLOOR pixels: the light then shows only one number at a time.
+let CRITTERS = [];
+let LIGHT = RADIUS;                      // the light's size; it shrinks a little only on very small screens
+const CRITTER_KINDS = ["bat", "ghost", "bat", "ghost", "bat", "ghost"];   // how many and which: edit this list
 function layout() {
-  const FLOOR = RADIUS + 38;
-  const m = 54, n = ITEMS.length, want = n + DECO_KINDS.length, rnd = rng(LAYOUT_SEED);
+  let FLOOR = RADIUS + 38;
+  const m = 54, n = ITEMS.length, rnd = rng(LAYOUT_SEED);
   let gap = 175, pts = [];
   function honeycomb(g) {
     const out = [], rowH = g * 0.866;
@@ -129,10 +135,14 @@ function layout() {
       for (let xx = m + (row % 2) * g / 2; xx <= W - m; xx += g) out.push({ x: xx, y: yy });
     return out;
   }
-  for (; gap >= FLOOR; gap *= 0.96) { pts = honeycomb(gap); if (pts.length >= want) break; }
+  for (; gap >= FLOOR; gap *= 0.96) { pts = honeycomb(gap); if (pts.length >= n) break; }
+  LIGHT = RADIUS;
   if (pts.length < n) { gap = FLOOR; pts = honeycomb(FLOOR); }
+  while (pts.length < n && LIGHT > 56) {          // tiny screen: make the light a little smaller so everything still fits
+    LIGHT -= 3; FLOOR = LIGHT + 38; gap = FLOOR; pts = honeycomb(FLOOR);
+  }
   for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
-  const use = pts.slice(0, Math.min(want, pts.length)).map(function (p) { return { x: p.x, y: p.y }; });
+  const use = pts.slice(0, n).map(function (p) { return { x: p.x, y: p.y }; });
   const jit = Math.max(0, (gap - FLOOR) * 0.4);
   const jittered = use.map(function (p) { return { x: p.x + (rnd() * 2 - 1) * jit, y: p.y + (rnd() * 2 - 1) * jit }; });
   const fine = jittered.every(function (a, i) { return jittered.every(function (c, k) { return k <= i || Math.hypot(a.x - c.x, a.y - c.y) >= FLOOR; }); });
@@ -141,9 +151,22 @@ function layout() {
     const q = final[i % final.length], pad = it.px * 0.5 + 8;
     it.X = Math.min(W - pad, Math.max(pad, q.x)); it.Y = Math.min(H - pad, Math.max(pad, q.y));
   });
-  DECOS = [];
-  for (let i = n; i < final.length && DECOS.length < DECO_KINDS.length; i++)
-    DECOS.push({ k: DECO_KINDS[DECOS.length], X: final[i].x, Y: final[i].y, s: 50 + Math.round(rnd() * 8) });
+
+  // The glowing bats and ghosts that float on the black veil. They are spread out on their own
+  // and vanish wherever the light passes. Fewer of them on small screens, so it never gets busy.
+  CRITTERS = [];
+  const count = Math.min(CRITTER_KINDS.length, Math.max(2, Math.floor(W * H / 55000)));
+  const crnd = rng(LAYOUT_SEED + 99);
+  let apart = 150, awayFromNumbers = 70;
+  for (let round = 0; round < 30 && CRITTERS.length < count; round++) {
+    for (let tries = 0; tries < 300 && CRITTERS.length < count; tries++) {
+      const x = 46 + crnd() * (W - 92), y = 46 + crnd() * (H - 92);
+      if (CRITTERS.every(function (c) { return Math.hypot(c.X - x, c.Y - y) >= apart; }) &&
+          ITEMS.every(function (it) { return Math.hypot(it.X - x, it.Y - y) >= awayFromNumbers; }))
+        CRITTERS.push({ k: CRITTER_KINDS[CRITTERS.length], X: x, Y: y, s: 46 + Math.round(crnd() * 14) });
+    }
+    apart *= 0.92; awayFromNumbers = Math.max(0, awayFromNumbers - 6);
+  }
 }
 
 // ---- the little Halloween drawings (each is drawn around 0,0 and is about 50 px wide) ----
@@ -175,21 +198,9 @@ function drawGhost(c, col) {
   c.beginPath(); c.ellipse(7, -3, 3.2, 5, 0, 0, Math.PI * 2); c.fill();
   c.beginPath(); c.ellipse(0, 8, 3.4, 4.6, 0, 0, Math.PI * 2); c.fill();                                       // mouth
 }
-function drawPumpkin(c, col) {
-  c.fillStyle = col[0];
-  [[-11, 11, 14], [11, 11, 14], [0, 12, 15.5]].forEach(function (e) { c.beginPath(); c.ellipse(e[0], 4, e[1], e[2], 0, 0, Math.PI * 2); c.fill(); });
-  c.fillStyle = "#6cff3b"; c.shadowColor = "#2fd100";
-  c.beginPath(); c.moveTo(-3, -9); c.lineTo(-1, -19); c.lineTo(4, -19); c.lineTo(3, -9); c.closePath(); c.fill();   // stem
-  c.shadowBlur = 0; c.fillStyle = "#000";
-  c.beginPath(); c.moveTo(-12, 0); c.lineTo(-5, 0); c.lineTo(-8.5, -7); c.closePath(); c.fill();                 // eyes
-  c.beginPath(); c.moveTo(12, 0); c.lineTo(5, 0); c.lineTo(8.5, -7); c.closePath(); c.fill();
-  c.beginPath(); c.moveTo(-10, 8); c.lineTo(-5, 12); c.lineTo(-2.5, 8.5); c.lineTo(0, 12); c.lineTo(2.5, 8.5);
-  c.lineTo(5, 12); c.lineTo(10, 8); c.lineTo(7, 15); c.lineTo(-7, 15); c.closePath(); c.fill();                  // grin
-}
-const DECO_STYLE = {
-  bat:     { col: ["#b46bff", "#7a2cff"], draw: drawBat },
-  ghost:   { col: ["#ece8ff", "#8f84ff"], draw: drawGhost },
-  pumpkin: { col: ["#ffa21f", "#ff6a00"], draw: drawPumpkin }
+const CRITTER_STYLE = {
+  bat:   { col: ["#b46bff", "#8a3dff"], draw: drawBat },
+  ghost: { col: ["#e9fff0", "#7dff8a"], draw: drawGhost }
 };
 
 function paintText() {
@@ -209,26 +220,56 @@ function paintText() {
     lctx.shadowBlur = 0;
     lctx.strokeText(it.t, it.X, it.Y); lctx.fillText(it.t, it.X, it.Y);
   });
-  DECOS.forEach(function (d) {
-    const st = DECO_STYLE[d.k];
-    lctx.save();
-    lctx.translate(d.X, d.Y); lctx.scale(d.s / 50, d.s / 50);
-    lctx.shadowColor = st.col[1]; lctx.shadowBlur = 12 * dpr;
-    st.draw(lctx, st.col);
-    lctx.restore();
+}
+
+function paintCritters() {
+  cctx.setTransform(1, 0, 0, 1, 0, 0);
+  cctx.clearRect(0, 0, crit.width, crit.height);
+  CRITTERS.forEach(function (d) {
+    const st = CRITTER_STYLE[d.k];
+    cctx.save();
+    cctx.setTransform(dpr * d.s / 50, 0, 0, dpr * d.s / 50, d.X * dpr, d.Y * dpr);
+    cctx.fillStyle = st.col[0];
+    cctx.shadowColor = st.col[1]; cctx.shadowBlur = 18 * dpr;
+    st.draw(cctx, st.col);
+    cctx.shadowBlur = 8 * dpr; st.draw(cctx, st.col);          // a second pass makes the glow stronger
+    cctx.restore();
   });
 }
 
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
-  [view, lit, scratch].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
+  [view, veil, crit, lit, scratch].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
   layout();
   paintText();
+  paintCritters();
+  lastR = 1;
   wasLit = true;
 }
 
+function renderVeil() {
+  if (r <= 0 && lastR <= 0) return;          // nothing changed: the veil stays as it is
+  veilCtx.setTransform(1, 0, 0, 1, 0, 0);
+  veilCtx.globalCompositeOperation = "source-over";
+  veilCtx.clearRect(0, 0, veil.width, veil.height);
+  veilCtx.drawImage(crit, 0, 0);
+  if (r > 0) {                               // the light wipes the veil away, just like it reveals the numbers
+    veilCtx.globalCompositeOperation = "destination-out";
+    const cx = x * dpr, cy = y * dpr, rr = r * dpr * 1.25;
+    const g = veilCtx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+    g.addColorStop(0, "rgba(0,0,0,1)");
+    g.addColorStop(0.7, "rgba(0,0,0,1)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    veilCtx.fillStyle = g;
+    veilCtx.fillRect(0, 0, veil.width, veil.height);
+    veilCtx.globalCompositeOperation = "source-over";
+  }
+}
+
 function render() {
+  renderVeil();
+  lastR = r;
   if (r <= 0) {
     if (wasLit) { vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.clearRect(0, 0, view.width, view.height); wasLit = false; }
     return;
@@ -252,7 +293,7 @@ function render() {
 }
 
 function show(e) {
-  tx = e.clientX; ty = e.clientY - (e.pointerType === "touch" ? TOUCH_LIFT : 0); targetR = RADIUS;
+  tx = e.clientX; ty = e.clientY - (e.pointerType === "touch" ? TOUCH_LIFT : 0); targetR = LIGHT;
   if (r < 1) { x = tx; y = ty; }
 }
 function hide() { targetR = 0; }
