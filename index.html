@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trick or Treat</title>
+<style>
+  html, body {
+    margin: 0; height: 100%;
+    background: #000;
+    overflow: hidden;
+    touch-action: none;                 /* phones: a finger drag moves the light, it does not scroll the page */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  /* The only thing on the page is one picture (a canvas). It shows the hidden numbers
+     only inside the circle of light, and it is empty everywhere else. */
+  /* the orange frame around the whole page */
+  #frame {
+    position: fixed; left: 8px; top: 8px; right: 8px; bottom: 8px;
+    border: 3px solid #ff7a14; border-radius: 22px; pointer-events: none;
+    box-shadow: 0 0 24px rgba(255,122,20,0.55), inset 0 0 22px rgba(125,255,58,0.18);
+  }
+  #view { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<canvas id="view"></canvas>
+<div id="frame"></div>
+
+<script>
+(function () {
+// ---- SETTINGS ------------------------------------------------------------
+const RADIUS = 72;           // size of the light in pixels: just enough for ONE number at a time
+const TOUCH_LIFT = 70;       // on phones the light sits this many pixels above the finger so the finger doesn't cover it
+const LAYOUT_SEED = 31;      // change this number to get a different random scatter
+const PASS = "root";     // passphrase the numbers were sealed with
+// --------------------------------------------------------------------------
+
+// ---- THE SEALED NUMBERS -------------------------------------------------------
+// The digits and their sizes are NOT written in this file; they are sealed here and only
+// drawn onto the picture. Their positions are scattered by the script below.
+const SEAL = "ER8B5gRDUavxJ/FI7mJbFFCrbDQRIXQjJga2758WXEkOrLPMoi+reAVqJSBceL+2n+I3KBwWjVzgJadaLzWkQEmttniAEqxapxeB+36CNAbFdYnpAW/PJO5v4GBcquqYcmHaQRYKVIP34xKw9MNO8jBspp18cCL3s+VzfF/U8voSKiPjuYVOuc9nJbz/vYbd63rvPPBWnw/hpVQ5VHPhw9aNTEC+Cd0dhVo3dGABIH5onVkPQMvhTKPRbrWTgun6v/++e8N0jCffkLxAueAJVB+5y1Fyo1J3z5DxavpqlxE+crmi2ZYPA/7RAdiyxNcJF0T3vpF1rIiM8JqOPg/6wJ2LGCDIO/EA/6bVCJq+CoAj16SiEEPJS9fcIjkiJKTJRDoN1VG7upRAjsoMQl43pPJFBuy9fXvhuI1VZ12+qGOQ9KP1V2f8QJr8cTSoJGFUORuMZo5y+RQhdLQsaFkIF9X+R8KkR/qzRm5cafJB72oe9KduI4fDpeNWeUKIPI++zTzY/P6ShOfU+RQ=";
+// ---------------------------------------------------------------------------
+
+// small helpers for the lock
+function sealHash(str, seed) {
+  seed = seed || 0;
+  var h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+  for (var i = 0, ch; i < str.length; i++) {
+    ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+function sealRng(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function sealStream(bytes, key) {
+  var rnd = sealRng(sealHash(key, 7) >>> 0);
+  return bytes.map(function (b) { return b ^ ((rnd() * 256) | 0); });
+}
+function sealText(text, key) {
+  var bytes = Array.from(new TextEncoder().encode(text));
+  return btoa(String.fromCharCode.apply(null, sealStream(bytes, key)));
+}
+function unsealText(b64, key) {
+  var raw = Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+  return new TextDecoder().decode(new Uint8Array(sealStream(raw, key)));
+}
+/* Used by the jigsaw and blacklight pages: returns the text, or null if the key was wrong. */
+function openSeal(b64, key) {
+  var t;
+  try { t = unsealText(b64, key); } catch (e) { return null; }
+  return t.slice(0, 4) === "CK1|" ? t.slice(4) : null;
+}
+
+
+// Halloween colours: [letters, glow]
+const COLORS = {
+  g: ["#82ff2e", "#2fd100"],   // Halloween green  (north)
+  o: ["#ff7a14", "#ff4a00"]    // Halloween orange (west)
+};
+
+let ITEMS = [];
+try { const parsed = JSON.parse(openSeal(SEAL, "glow|" + PASS)); if (Array.isArray(parsed)) ITEMS = parsed; } catch (e) {}
+
+const view = document.getElementById("view");
+const vctx = view.getContext("2d");
+const lit = document.createElement("canvas");      // all the numbers; lives only in memory
+const scratch = document.createElement("canvas");  // where the picture is cut to the circle of light
+const lctx = lit.getContext("2d");
+const sctx = scratch.getContext("2d");
+
+let W = 0, H = 0, dpr = 1;
+let tx = -999, ty = -999, x = -999, y = -999;
+let r = 0, targetR = 0, wasLit = false;
+
+function rng(a) {                       // small seeded random generator, so the scatter is repeatable
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Scatter everything across the page. Items sit on a loose, jittered honeycomb so no two are
+// closer than FLOOR pixels: the light then shows only one number at a time. The numbers
+// take their places first; spare places get the Halloween decorations.
+const DECO_KINDS = ["pumpkin", "bat", "ghost", "bat", "pumpkin", "ghost"];   // how many and which: edit this list
+let DECOS = [];
+function layout() {
+  const FLOOR = RADIUS + 38;
+  const m = 54, n = ITEMS.length, want = n + DECO_KINDS.length, rnd = rng(LAYOUT_SEED);
+  let gap = 175, pts = [];
+  function honeycomb(g) {
+    const out = [], rowH = g * 0.866;
+    for (let row = 0, yy = m; yy <= H - m; row++, yy = m + row * rowH)
+      for (let xx = m + (row % 2) * g / 2; xx <= W - m; xx += g) out.push({ x: xx, y: yy });
+    return out;
+  }
+  for (; gap >= FLOOR; gap *= 0.96) { pts = honeycomb(gap); if (pts.length >= want) break; }
+  if (pts.length < n) { gap = FLOOR; pts = honeycomb(FLOOR); }
+  for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pts[i]; pts[i] = pts[j]; pts[j] = t; }
+  const use = pts.slice(0, Math.min(want, pts.length)).map(function (p) { return { x: p.x, y: p.y }; });
+  const jit = Math.max(0, (gap - FLOOR) * 0.4);
+  const jittered = use.map(function (p) { return { x: p.x + (rnd() * 2 - 1) * jit, y: p.y + (rnd() * 2 - 1) * jit }; });
+  const fine = jittered.every(function (a, i) { return jittered.every(function (c, k) { return k <= i || Math.hypot(a.x - c.x, a.y - c.y) >= FLOOR; }); });
+  const final = fine ? jittered : use;
+  ITEMS.forEach(function (it, i) {
+    const q = final[i % final.length], pad = it.px * 0.5 + 8;
+    it.X = Math.min(W - pad, Math.max(pad, q.x)); it.Y = Math.min(H - pad, Math.max(pad, q.y));
+  });
+  DECOS = [];
+  for (let i = n; i < final.length && DECOS.length < DECO_KINDS.length; i++)
+    DECOS.push({ k: DECO_KINDS[DECOS.length], X: final[i].x, Y: final[i].y, s: 50 + Math.round(rnd() * 8) });
+}
+
+// ---- the little Halloween drawings (each is drawn around 0,0 and is about 50 px wide) ----
+function drawBat(c, col) {
+  c.fillStyle = col[0];
+  c.beginPath();
+  c.moveTo(0, -8); c.lineTo(-4, -16); c.lineTo(-1.5, -9); c.lineTo(1.5, -9); c.lineTo(4, -16); c.closePath();   // ears
+  c.fill();
+  c.beginPath(); c.ellipse(0, 1, 5, 9, 0, 0, Math.PI * 2); c.fill();                                           // body
+  [1, -1].forEach(function (d) {                                                                                // two wings
+    c.beginPath();
+    c.moveTo(4 * d, -4);
+    c.quadraticCurveTo(16 * d, -20, 30 * d, -9);
+    c.quadraticCurveTo(26 * d, -3, 24 * d, 3);
+    c.quadraticCurveTo(20 * d, -1, 17 * d, 7);
+    c.quadraticCurveTo(12 * d, 2, 8 * d, 9);
+    c.quadraticCurveTo(5 * d, 6, 4 * d, 6);
+    c.closePath(); c.fill();
+  });
+}
+function drawGhost(c, col) {
+  c.fillStyle = col[0];
+  c.beginPath();
+  c.moveTo(-20, 20); c.lineTo(-20, -4); c.arc(0, -4, 20, Math.PI, 0); c.lineTo(20, 20);
+  for (let k = 0; k < 3; k++) c.quadraticCurveTo(20 - 13.33 * k - 6.67, 31, 20 - 13.33 * (k + 1), 20);          // wavy hem
+  c.closePath(); c.fill();
+  c.shadowBlur = 0; c.fillStyle = "#000";
+  c.beginPath(); c.ellipse(-7, -3, 3.2, 5, 0, 0, Math.PI * 2); c.fill();                                       // eyes
+  c.beginPath(); c.ellipse(7, -3, 3.2, 5, 0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(0, 8, 3.4, 4.6, 0, 0, Math.PI * 2); c.fill();                                       // mouth
+}
+function drawPumpkin(c, col) {
+  c.fillStyle = col[0];
+  [[-11, 11, 14], [11, 11, 14], [0, 12, 15.5]].forEach(function (e) { c.beginPath(); c.ellipse(e[0], 4, e[1], e[2], 0, 0, Math.PI * 2); c.fill(); });
+  c.fillStyle = "#6cff3b"; c.shadowColor = "#2fd100";
+  c.beginPath(); c.moveTo(-3, -9); c.lineTo(-1, -19); c.lineTo(4, -19); c.lineTo(3, -9); c.closePath(); c.fill();   // stem
+  c.shadowBlur = 0; c.fillStyle = "#000";
+  c.beginPath(); c.moveTo(-12, 0); c.lineTo(-5, 0); c.lineTo(-8.5, -7); c.closePath(); c.fill();                 // eyes
+  c.beginPath(); c.moveTo(12, 0); c.lineTo(5, 0); c.lineTo(8.5, -7); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(-10, 8); c.lineTo(-5, 12); c.lineTo(-2.5, 8.5); c.lineTo(0, 12); c.lineTo(2.5, 8.5);
+  c.lineTo(5, 12); c.lineTo(10, 8); c.lineTo(7, 15); c.lineTo(-7, 15); c.closePath(); c.fill();                  // grin
+}
+const DECO_STYLE = {
+  bat:     { col: ["#b46bff", "#7a2cff"], draw: drawBat },
+  ghost:   { col: ["#ece8ff", "#8f84ff"], draw: drawGhost },
+  pumpkin: { col: ["#ffa21f", "#ff6a00"], draw: drawPumpkin }
+};
+
+function paintText() {
+  lctx.setTransform(1, 0, 0, 1, 0, 0);
+  lctx.clearRect(0, 0, lit.width, lit.height);
+  lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  lctx.textAlign = "center";
+  lctx.textBaseline = "middle";
+  lctx.lineJoin = "round";
+  ITEMS.forEach(function (it) {
+    const col = COLORS[it.c] || COLORS.g;
+    lctx.font = '900 ' + it.px + 'px "Arial Black", "Segoe UI Black", "Helvetica Neue", Arial, sans-serif';
+    lctx.lineWidth = it.px * 0.07;                       // a little outline makes the digits fatter
+    lctx.strokeStyle = col[0]; lctx.fillStyle = col[0];
+    lctx.shadowColor = col[1]; lctx.shadowBlur = 14 * dpr;     // slight glow
+    lctx.strokeText(it.t, it.X, it.Y); lctx.fillText(it.t, it.X, it.Y);
+    lctx.shadowBlur = 0;
+    lctx.strokeText(it.t, it.X, it.Y); lctx.fillText(it.t, it.X, it.Y);
+  });
+  DECOS.forEach(function (d) {
+    const st = DECO_STYLE[d.k];
+    lctx.save();
+    lctx.translate(d.X, d.Y); lctx.scale(d.s / 50, d.s / 50);
+    lctx.shadowColor = st.col[1]; lctx.shadowBlur = 12 * dpr;
+    st.draw(lctx, st.col);
+    lctx.restore();
+  });
+}
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  [view, lit, scratch].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
+  layout();
+  paintText();
+  wasLit = true;
+}
+
+function render() {
+  if (r <= 0) {
+    if (wasLit) { vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.clearRect(0, 0, view.width, view.height); wasLit = false; }
+    return;
+  }
+  sctx.setTransform(1, 0, 0, 1, 0, 0);
+  sctx.globalCompositeOperation = "source-over";
+  sctx.clearRect(0, 0, scratch.width, scratch.height);
+  sctx.drawImage(lit, 0, 0);
+  sctx.globalCompositeOperation = "destination-in";   // keep the numbers only where the light is
+  const cx = x * dpr, cy = y * dpr, rr = r * dpr;
+  const grad = sctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+  grad.addColorStop(0, "rgba(0,0,0,1)");
+  grad.addColorStop(0.62, "rgba(0,0,0,0.95)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  sctx.fillStyle = grad;
+  sctx.fillRect(0, 0, scratch.width, scratch.height);
+  vctx.setTransform(1, 0, 0, 1, 0, 0);
+  vctx.clearRect(0, 0, view.width, view.height);
+  vctx.drawImage(scratch, 0, 0);
+  wasLit = true;
+}
+
+function show(e) {
+  tx = e.clientX; ty = e.clientY - (e.pointerType === "touch" ? TOUCH_LIFT : 0); targetR = RADIUS;
+  if (r < 1) { x = tx; y = ty; }
+}
+function hide() { targetR = 0; }
+
+window.addEventListener("pointermove", show);
+window.addEventListener("pointerdown", show);
+window.addEventListener("pointerup", function (e) { if (e.pointerType !== "mouse") hide(); });
+window.addEventListener("pointercancel", hide);
+document.addEventListener("mouseleave", hide);
+window.addEventListener("blur", hide);
+window.addEventListener("resize", resize);
+
+function frame() {
+  x += (tx - x) * 0.25;
+  y += (ty - y) * 0.25;
+  r += (targetR - r) * 0.18;
+  if (r < 0.5 && targetR === 0) r = 0;
+  render();
+  requestAnimationFrame(frame);
+}
+
+resize();
+frame();
+})();
+</script>
+</body>
+</html>
