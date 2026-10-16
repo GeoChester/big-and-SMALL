@@ -43,7 +43,7 @@ const PASS = "root";     // passphrase the numbers were sealed with
 // ---- THE SEALED NUMBERS -------------------------------------------------------
 // The digits and their sizes are NOT written in this file; they are sealed here and only
 // drawn onto the picture. Their positions are scattered by the script below.
-const SEAL = "ER8B5gRDUavxJ/FI7mJbFFCrbDQRIXQjJga24psWXEkOrLPMoiereAVqJSBccL+2n+I3KBwVjVzgJadaLzWkQ0mttniAEqxSpxeB+36CNALLdYnpAW/PJO5m4GBcquqYcmHaQRYKVIP37hKw9MNO8jBsppt8cCL3s+VzfF/U8voSKiPuuYVOuc9nJbz/3obd63rvPPBenw/hpVQ5VH/sw9aNTEC+Cd0ZhVo3dGABIHZonVkPQMvhSqbRbrWTgun6v/++e8N0jCffmLxAueAJVB+8xlFyo1J3z5DxE/pqlxE+crmq2ZYPA/7RAde5xNcJF0T3vpF6rIiM8JqOPgf6wJ2LGCDIPvYA/6bVCJq+CoQj16SiEEPJQ9fcIjkiJKTGRzoN1VG7upRAicoMQl43pPJFBuy9fXvhuItVZ12+qGOQ9KPwV2f8QJr8cTyoJGFUORuMYY9y+RQhdLQsaF8IF9X+R8KkR/qzRm5cafJC5Woe9KduI4fDoONWeUKIPI+2zTzY/P6ShOLV+WViX3z3XahAE+Tj6tfMaAKArQFV/90Brh7MzA==";
+const SEAL = "ER8B5gRDUavxJ/Es7mJbFFCrbDwRIXQjJga2450WXEkOrLPMoiureAVqJSBceL+2n+I3KBwXi1zgJadaLzWkR0mttniAEqxapxeB+36CNAbJdYnpAW/PJO5o4GBcquqYcmHaQRYKVIP37BSw9MNO8jBspp58cCL3s+VzdF/U8voSKiPlvYVOuc9nJbz/sYbd63rvPPBenw/hpVQ5VHTgw9aNTEC+Cd0ahVo3dGABIH5onVkPQMvhR67RbrWTgun6v/i+e8N0jCffkLxAueAJVB+5y1Fyo1J3z5DxbvpqlxE+crmq2ZYPA/7RAdu1xNcJF0T3vpF1rIiM8JqOPg/6wJ2LGCDIO/YA/6bVCJq+CoEj16SiEEPJS9fcIjkiJKTEQToN1VG7upRAhsoMQl43pPJNBuy9fXvhuIpZZ12+qGOQ9KPzV2f8QJr8cTSoJGFUORuMbI5y+RQhdLQsaFkIF9X+R8KkR/qzRm5cafJB6Woe9KduI4fDp+NWeUKIPI+2zTzY/P6ShODX+WViX3z3Xag3E+Tj6tfMaAKArQFV/90BpR7MzA==";
 // ---------------------------------------------------------------------------
 
 // small helpers for the lock
@@ -149,7 +149,7 @@ function layout() {
   const final = fine ? jittered : use;
   ITEMS.forEach(function (it) { if (!it.px0) it.px0 = it.px; it.px = Math.round(26 + (it.px0 - 26) * (LIGHT / RADIUS)); });
   ITEMS.forEach(function (it, i) {
-    const q = final[i % final.length], pad = it.px * 0.5 + 6;
+    const q = final[i % final.length], pad = it.px * 0.5 + 16;
     it.X = Math.min(W - pad, Math.max(pad, q.x)); it.Y = Math.min(H - pad, Math.max(pad, q.y));
   });
 
